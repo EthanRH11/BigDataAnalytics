@@ -1,9 +1,9 @@
-total_users: 50
-total_points: 5133
-avg_points_per_user: 102.66
+total_users: 100
+total_points: 10093
+avg_points_per_user: 100.93
 date_range: 2023-01-01 08:00:00 to 2023-02-04 22:00:00
 geographic_bounds:
-  min_lat: 40.57445899843796
-  max_lat: 40.8261213372349
-  min_lon: -74.16022006257997
-  max_lon: -73.88093241626234
+  min_lat: 40.51859713355511
+  max_lat: 40.873151137764985
+  min_lon: -74.14457251505677
+  max_lon: -73.81901833975512

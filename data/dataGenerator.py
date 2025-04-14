@@ -169,7 +169,7 @@ def generate_synthetic_data(
 
 if __name__ == "__main__":
     generate_synthetic_data(
-        num_users=50,                         # 50 distinct users
+        num_users=100,                         # 50 distinct users
         num_points_per_user=100,              # ~100 points per user
         start_date=datetime(2023, 1, 1),      # Data starts Jan 1, 2023
         end_date=datetime(2023, 1, 31),       # Ends Jan 31, 2023
