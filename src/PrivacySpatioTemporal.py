@@ -27,7 +27,7 @@ def load_data(file_path):
 
 def basic_queries(df):
     print("\n--- BASIC QUERIES (NO PRIVACY PROTECTION) ---")
- # Count points by location
+    # Count points by location
     location_counts = df.groupby(['latitude', 'longitude']).size().reset_index(name='count')
     print(f"Most popular location: {location_counts.loc[location_counts['count'].idxmax()]}")
     
@@ -41,7 +41,6 @@ def basic_queries(df):
     lon_min = df['longitude'].min()
     lon_max = df['longitude'].max()
     
-    # Calculate a small region that should contain some points (central 10%)
     lat_range = lat_max - lat_min
     lon_range = lon_max - lon_min
     lat_center = (lat_max + lat_min) / 2
@@ -96,7 +95,6 @@ def query_with_laplace_noise(df, epsilons=[0.1, 0.5, 1.0, 2.0]):
     lon_min = df['longitude'].min()
     lon_max = df['longitude'].max()
     
-    # Calculate a region that should contain some points (central 10%)
     lat_range = lat_max - lat_min
     lon_range = lon_max - lon_min
     lat_center = (lat_max + lat_min) / 2
@@ -136,7 +134,6 @@ def query_with_laplace_noise(df, epsilons=[0.1, 0.5, 1.0, 2.0]):
         difference = len(area_points_noisy) - len(area_points_original)
         percent_diff = (difference / len(area_points_original) * 100) if len(area_points_original) > 0 else float('inf')
         
-        # Determine privacy level description
         if epsilon <= 0.1:
             privacy = "Very High"
         elif epsilon <= 0.5:
@@ -153,7 +150,6 @@ def query_with_laplace_noise(df, epsilons=[0.1, 0.5, 1.0, 2.0]):
     
     print("\nNote: Lower epsilon = more privacy but less accuracy")
     
-    # Return the df with medium privacy for further processing
     return results.get(1.0, results[list(results.keys())[0]])
 
 #3 Spatial K-Anonymity
@@ -162,16 +158,13 @@ def apply_spatial_kanonymity(df, k=5, grid_size=0.01):
     # Create a copy
     df_anonymized = df.copy()
     
-    # Snap points to grid
     df_anonymized['lat_grid'] = (df_anonymized['latitude'] // grid_size) * grid_size
     df_anonymized['lon_grid'] = (df_anonymized['longitude'] // grid_size) * grid_size
     
     grid_counts = df_anonymized.groupby(['lat_grid', 'lon_grid']).size()
     
-    # Find cells with at least k points
     valid_cells = grid_counts[grid_counts >= k].reset_index()
     
-    # Keep only points in valid cells
     df_anonymized = pd.merge(
         df_anonymized, 
         valid_cells, 
@@ -179,7 +172,6 @@ def apply_spatial_kanonymity(df, k=5, grid_size=0.01):
         how='inner'
     )
     
-    # Replace actual coordinates with grid cell coordinates
     df_anonymized['latitude'] = df_anonymized['lat_grid']
     df_anonymized['longitude'] = df_anonymized['lon_grid']
     
@@ -193,7 +185,6 @@ def query_with_kanonymity(df, k=5):
     # Apply k-anonymity
     df_kanon = apply_spatial_kanonymity(df, k)
     
-    # Compare before and after
     print(f"Original data points: {len(df)}")
     print(f"Points after k-anonymity (k={k}): {len(df_kanon)}")
     print(f"Points suppressed: {len(df) - len(df_kanon)}")
@@ -236,14 +227,12 @@ def query_with_temporal_cloaking(df, interval_hours=1):
 # 5. Query Result Perturbation
 
 def perturb_query_result(result, epsilon=1.0):
-    # For count queries, sensitivity is 1
     sensitivity = 1
     scale = sensitivity / epsilon
     
     # Add Laplace noise
     noise = np.random.laplace(0, scale)
     
-    # Round to integer for count queries
     perturbed_result = max(0, round(result + noise))
     
     return perturbed_result
@@ -252,7 +241,6 @@ def demonstrate_result_perturbation(df):
     """Demonstrate perturbing query results instead of data"""
     print("\n--- QUERY RESULT PERTURBATION ---")
     
-    # Define several queries
     queries = [
         ("Users who visited parks", len(df[df['poi_type'] == 'park']['user_id'].unique())),
         ("Points during morning hours (6-10 AM)", len(df[df['timestamp'].dt.hour.between(6, 10)])),
@@ -303,14 +291,13 @@ def visualize_privacy_effects(df, df_noisy, df_kanon):
 # Main function
 
 def main():
-    # Set random seed for reproducibility
     np.random.seed(42)
     
     # Parameters
     data_file = "../data/data/synthetic_spatiotemporal_data.csv"
-    epsilons = [0.1, 0.5, 1.0, 2.0]  # Privacy parameter for differential privacy
-    k = 5  # Anonymity parameter for k-anonymity
-    time_interval = 2  # Hours for temporal cloaking
+    epsilons = [0.1, 0.5, 1.0, 2.0]     
+    k = 5  
+    time_interval = 2
     
     # Check if file exists
     if not os.path.exists(data_file):
