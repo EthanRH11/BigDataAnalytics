@@ -1,8 +1,12 @@
 import pandas as pd
 import numpy as np
-#import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import matplotlib.cm as cm
+import matplotlib.colors as LogNorm
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from datetime import datetime, timedelta
 import os
+from scipy.spatial.distance import cdist
 from scipy import stats
 import math
 
@@ -288,6 +292,170 @@ def visualize_privacy_effects(df, df_noisy, df_kanon):
     plt.savefig('privacy_effects_visualization.png')
     print("\nVisualization saved as 'privacy_effects_visualization.png'")
 
+def visualize_temporal_cloaking(df_original, df_cloaked, interval_hours):
+    plt.figure(figsize=(12, 6))
+
+    original_times = pd.to_datetime(df_original['timestamp']).sort_values()
+    cloaked_times = pd.to_datetime(df_cloaked['timestamp']).sort_values()
+
+    # Create two subplots
+    plt.subplot(2, 1, 1)
+    plt.hist(original_times, bins=50, alpha=0.7, color='blue')
+    plt.title('Original Timestamp Distribution')
+    plt.ylabel('Frequency')
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+    plt.xticks(rotation=45)
+
+    plt.subplot(2, 1, 2)
+    plt.hist(cloaked_times, bins=50, alpha=0.7, color='green')
+    plt.title(f'Timestamp Distribution After {interval_hours}-Hour Cloaking')
+    plt.ylabel('Frequency')
+    plt.xlabel('Time')
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+    plt.xticks(rotation=45)
+    
+    plt.tight_layout()
+    plt.savefig('temporal_cloaking_visualization.png')
+    print("\nTemporal cloaking visualization saved as 'temporal_cloaking_visualization.png'")
+
+
+def visualize_privacy_heatmaps(df, df_noisy, df_kanon):
+
+    plt.figure(figsize=(15, 5))
+    
+    # Create a grid for the heatmap
+    lon_min, lon_max = df['longitude'].min(), df['longitude'].max()
+    lat_min, lat_max = df['latitude'].min(), df['latitude'].max()
+    
+    lon_padding = (lon_max - lon_min) * 0.05
+    lat_padding = (lat_max - lat_min) * 0.05
+    
+    lon_min -= lon_padding
+    lon_max += lon_padding
+    lat_min -= lat_padding
+    lat_max += lat_padding
+    
+    lon_bins = np.linspace(lon_min, lon_max, 100)
+    lat_bins = np.linspace(lat_min, lat_max, 100)
+    
+    # Function to create histogram2d data
+    def create_heatmap_data(df_data):
+        hist, _, _ = np.histogram2d(
+            df_data['longitude'], df_data['latitude'], 
+            bins=[lon_bins, lat_bins]
+        )
+        return hist.T  
+    
+    hist_original = create_heatmap_data(df)
+    hist_noisy = create_heatmap_data(df_noisy)
+    hist_kanon = create_heatmap_data(df_kanon)
+    
+    titles = ['Original Data Density', 'DP Noisy Data Density', 'K-anonymized Data Density']
+    data_sets = [hist_original, hist_noisy, hist_kanon]
+    
+    for i, (title, data) in enumerate(zip(titles, data_sets)):
+        ax = plt.subplot(1, 3, i+1)
+        
+        im = ax.imshow(data, cmap='hot', origin='lower', aspect='auto', 
+                    extent=[lon_min, lon_max, lat_min, lat_max])
+        
+        plt.title(title)
+        plt.xlabel('Longitude')
+        if i == 0:
+            plt.ylabel('Latitude')
+        
+        # Add colorbar
+        plt.colorbar(im)
+    
+    plt.tight_layout()
+    plt.savefig('privacy_heatmaps.png')
+    print("\nHeatmap visualization saved as 'privacy_heatmaps.png'")
+
+def visualize_privacy_utility_tradeoff(df, epsilons=[0.1, 0.5, 1.0, 2.0, 5.0], k_values=[3, 5, 10, 15, 20], 
+                                      time_intervals=[0.5, 1, 2, 6, 12]):
+    """
+    Create visualizations showing the privacy-utility tradeoff for different
+    privacy techniques with various parameter settings.
+    """
+    plt.figure(figsize=(15, 10))
+    
+    plt.subplot(3, 1, 1)
+    
+    dp_utility = []
+    dp_distortion = []
+    
+    sample_size = min(1000, len(df))
+    df_sample = df.sample(sample_size)
+    
+    for epsilon in epsilons:
+        df_noisy = add_laplace_noise(df_sample, epsilon)
+        
+        orig_coords = df_sample[['latitude', 'longitude']].values
+        noisy_coords = df_noisy[['latitude', 'longitude']].values
+        
+        distances = np.sqrt(np.sum((orig_coords - noisy_coords)**2, axis=1))
+        avg_distortion = np.mean(distances)
+        
+        dp_distortion.append(avg_distortion)
+        dp_utility.append(1 / (1 + avg_distortion))  # Higher distortion = lower utility
+    
+    plt.plot(epsilons, dp_utility, 'o-', label='Utility')
+    plt.plot(epsilons, [1/x for x in dp_distortion], 's-', label='1/Distortion')
+    plt.axhline(y=0.5, color='r', linestyle='--', alpha=0.3)
+    plt.title('Differential Privacy Tradeoff: Utility vs. Privacy Budget (ε)')
+    plt.xlabel('Privacy Budget (ε) - Higher ε means less privacy')
+    plt.ylabel('Utility Metric')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    plt.subplot(3, 1, 2)
+    
+    k_data_retention = []
+    k_location_retention = []
+    
+    for k in k_values:
+        df_kanon = apply_spatial_kanonymity(df, k)
+        
+        data_retention = len(df_kanon) / len(df)
+        location_retention = df_kanon[['latitude', 'longitude']].drop_duplicates().shape[0] / \
+                            df[['latitude', 'longitude']].drop_duplicates().shape[0]
+        
+        k_data_retention.append(data_retention)
+        k_location_retention.append(location_retention)
+    
+    plt.plot(k_values, k_data_retention, 'o-', label='Data Point Retention')
+    plt.plot(k_values, k_location_retention, 's-', label='Location Retention')
+    plt.title('K-Anonymity Tradeoff: Data Retention vs. Privacy Level (k)')
+    plt.xlabel('Privacy Level (k) - Higher k means more privacy')
+    plt.ylabel('Retention Rate')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    plt.subplot(3, 1, 3)
+    
+    time_resolution = []
+    time_granularity = []
+    
+    for interval in time_intervals:
+        df_cloaked = apply_temporal_cloaking(df, interval * 3600)
+        
+        # Resolution reduction (higher is more privacy)
+        resolution_reduction = df['timestamp'].nunique() / df_cloaked['timestamp'].nunique()
+        time_granularity.append(interval)  
+        time_resolution.append(resolution_reduction)
+    
+    plt.plot(time_intervals, time_resolution, 'o-', label='Temporal Resolution Reduction')
+    plt.title('Temporal Cloaking Tradeoff: Resolution vs. Time Interval')
+    plt.xlabel('Cloaking Interval (Hours) - Higher interval means more privacy')
+    plt.ylabel('Temporal Resolution Reduction Factor')
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('privacy_utility_tradeoff.png')
+    print("\nPrivacy-utility tradeoff visualization saved as 'privacy_utility_tradeoff.png'")
+
+
+
 # Main function
 
 def main():
@@ -324,11 +492,22 @@ def main():
     demonstrate_result_perturbation(df)
     
     # 6. Visualize privacy effects
-    if plt is None:
+    if plt is not None:
         visualize_privacy_effects(df, df_noisy, df_kanon)
     else:
         print("\nSkipping visualization due to matplotlib import issue")
         print("To enable visualization, please troubleshoot matplotlib installation")
+    # 7. More visualization methods
+    if plt is not None:
+        print("\n--- Generating additional visualization ---")
+
+        visualize_temporal_cloaking(df, df_cloaked, time_interval)
+
+        visualize_privacy_heatmaps(df, df_noisy, df_kanon)
+
+        visualize_privacy_utility_tradeoff(df, epsilons)
+    else:
+        print("\nSkipping additional visualization")
 
     print("\nAll privacy-preserving query demonstrations completed.")
     print("You can now analyze the results to compare the different techniques.")
