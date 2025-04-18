@@ -81,14 +81,14 @@ def add_laplace_noise(df, epsilon=1.0, column_scales=None):
             'longitude': 0.001
         }
 
-        df_noisy = df.copy()
+    df_noisy = df.copy()
 
-        for column, sensitivity in column_scales.items():
-            scale = sensitivity / epsilon
-            noise = np.random.laplace(0, scale, size=len(df))
-            df_noisy[column] = df_noisy[column] + noise
+    for column, sensitivity in column_scales.items():
+        scale = sensitivity / epsilon
+        noise = np.random.laplace(0, scale, size=len(df))
+        df_noisy[column] = df_noisy[column] + noise
 
-        return df_noisy
+    return df_noisy
     
 def query_with_laplace_noise(df, epsilons=[0.1, 0.5, 1.0, 2.0]):
     print(f"\n--- QUERIES WITH LAPLACE NOISE (DIFFERENTIAL PRIVACY) ---")
@@ -227,6 +227,21 @@ def query_with_temporal_cloaking(df, interval_hours=1):
     print(f"Temporal resolution reduced by factor of: {orig_timestamps / cloaked_timestamps:.1f}x")
     
     return df_cloaked
+
+def combined_laplace_kanonymity(df, epsilon=1.0, k=5, grid_size=0.01):
+    df_kanon = apply_spatial_kanonymity(df, k, grid_size)
+
+    if df_kanon is None or len(df_kanon) == 0:
+        print("Warning: K-Anonymity returned no data points. Check your parameters.")
+        return df.copy()
+
+    column_scales = {
+        'latitude': grid_size/10,
+        'longitude': grid_size/10
+    }
+    df_combined = add_laplace_noise(df_kanon, epsilon, column_scales)
+
+    return df_combined
 
 # 5. Query Result Perturbation
 
@@ -454,7 +469,69 @@ def visualize_privacy_utility_tradeoff(df, epsilons=[0.1, 0.5, 1.0, 2.0, 5.0], k
     plt.savefig('privacy_utility_tradeoff.png')
     print("\nPrivacy-utility tradeoff visualization saved as 'privacy_utility_tradeoff.png'")
 
+def visualize_combined_approach(df, df_combined, k, epsilon):
+    plt.figure(figsize=(15, 10))
 
+    plt.subplot(2, 2, 1)
+    plt.scatter(df['longitude'], df['latitude'], s=1, alpha=0.5)
+    plt.title('Original Data')
+    plt.xlabel('Longitude')
+    plt.ylabel('Latitude')    
+
+    plt.subplot(2, 2, 2)
+    plt.scatter(df_combined['longitude'], df_combined['latitude'], s=1, alpha=0.5)
+    plt.title(f'Combined K-Anonymity (k={k}) and DP (ε={epsilon})')
+    plt.xlabel('Longitude')
+    plt.ylabel('Latitude')
+
+    orig_locations = df[['latitude', 'longitude']].drop_duplicates().shape[0]
+    combined_locations = df_combined[['latitude', 'longitude']].drop_duplicates().shape[0]
+
+    orig_coords = df[['latitude', 'longitude']].values
+    combined_coords = df_combined[['latitude', 'longitude']].values
+
+    sample_size = min(1000, len(df))
+    if len(df) > sample_size:
+        indices = np.random.choice(len(df), sample_size, replace=False)
+        orig_sample = orig_coords[indices]
+        # For each original point, find the closest combined point
+        distances = []
+        for point in orig_sample:
+            closest_dist = np.min(np.sqrt(np.sum((combined_coords - point)**2, axis=1)))
+            distances.append(closest_dist)
+    else:
+        distances = []
+        for point in orig_coords:
+            closest_dist = np.min(np.sqrt(np.sum((combined_coords - point)**2, axis=1)))
+            distances.append(closest_dist)
+
+    avg_distance = np.mean(distances)
+   
+    plt.subplot(2, 2, 3)
+    plt.hist(distances, bins=30, alpha=0.7)
+    plt.axvline(avg_distance, color='r', linestyle='--')
+    plt.title(f'Distance Distribution (Avg: {avg_distance:.6f})')
+    plt.xlabel('Distance between original and private points')
+    plt.ylabel('Frequency')
+
+    plt.subplot(2, 2, 4)
+    metrics = {
+        'Original Points': len(df),
+        'Private Points': len(df_combined),
+        'Original Locations': orig_locations,
+        'Private Locations': combined_locations,
+        'Avg. Distortion': avg_distance
+    }
+    
+    plt.bar(metrics.keys(), metrics.values())
+    plt.title('Privacy Metrics Comparison')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    
+    plt.savefig('combined_privacy_approach.png')
+    print("\nCombined approach visualization saved as 'combined_privacy_approach.png'")
+    
+    return metrics    
 
 # Main function
 
@@ -463,7 +540,8 @@ def main():
     
     # Parameters
     data_file = "../data/data/synthetic_spatiotemporal_data.csv"
-    epsilons = [0.1, 0.5, 1.0, 2.0]     
+    epsilons = [0.1, 0.5, 1.0, 2.0] 
+    epsilon = 1.0    
     k = 5  
     time_interval = 2
     
@@ -508,6 +586,10 @@ def main():
         visualize_privacy_utility_tradeoff(df, epsilons)
     else:
         print("\nSkipping additional visualization")
+
+    print("\n--- COMBINED PRIVACY APPROACH (K-ANONYMITY + DIFFERENTIAL PRIVACY) ---")
+    df_combined = combined_laplace_kanonymity(df, epsilon=1.0, k=5)
+    metrics = visualize_combined_approach(df, df_combined, k=5, epsilon=1.0)
 
     print("\nAll privacy-preserving query demonstrations completed.")
     print("You can now analyze the results to compare the different techniques.")
